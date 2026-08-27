@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   push:
     branches-ignore:
       - "dependabot/**"
@@ -29,6 +30,11 @@ jobs:
           key: android-deps-${{ runner.os }}-${{ hashFiles('gradle/**', 'gradlew*', 'gradle.properties', '*.gradle*') }}
           restore-keys: |
             android-deps-${{ runner.os }}-
+      - name: Cache bundled speech model
+        uses: actions/cache@v4
+        with:
+          path: androidApp/build/generated/privacyModelAssets/models/parakeet-tdt-0.6b-v3-cq4.zip
+          key: privacy-stt-v2.1.0-a688a13072db80d45a6526e14284edc7f1b050bdfbdcac5ef36437880d9335a8
       - name: Use dummy google-services json
         run: mv androidApp/src/google-services-dummy.json androidApp/src/google-services.json
       - name: Build and Test
@@ -36,6 +42,20 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ secrets.READ_PACKAGES_ACTOR }}
           GITHUB_TOKEN: ${{ secrets.READ_PACKAGES_TOKEN }}
+      - name: Prepare installable APK
+        run: |
+          mkdir -p artifacts
+          cp androidApp/build/outputs/apk/debug/androidApp-debug.apk artifacts/pebble-privacy-debug.apk
+          cd artifacts
+          sha256sum pebble-privacy-debug.apk > pebble-privacy-debug.apk.sha256
+      - name: Upload privacy APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pebble-privacy-debug-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
   ios:
     runs-on: macos-15
