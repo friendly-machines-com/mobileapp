@@ -3,6 +3,7 @@ package coredevices.pebble.services
 import co.touchlab.kermit.Logger
 import coredevices.database.MemfaultChunkDao
 import coredevices.database.MemfaultChunkEntity
+import coredevices.util.PrivacyPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ class MemfaultChunkQueue(
 
     // Non-suspending — safe to call from any context
     fun enqueue(serial: String, bytes: ByteArray) {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return
         channel.trySend(PendingChunk(serial, bytes))
     }
 
@@ -52,6 +54,7 @@ class MemfaultChunkQueue(
     // Called externally (e.g. background sync) to retry any chunks that failed to upload.
     // The mutex ensures this doesn't run concurrently with the processing loop's own upload pass.
     suspend fun uploadPendingFromDb() = uploadMutex.withLock {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return@withLock
         evictOldestIfOverLimit()
         dao.getPendingSerials().forEach { serial ->
             val chunks = dao.getChunksForSerial(serial)

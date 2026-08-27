@@ -58,7 +58,7 @@ fun musicRoutesFor(mode: MusicControlMode): Map<RingGesture, GestureDestination.
 }
 
 fun recordingRouteFor(mode: SecondaryMode, mcpGroupId: Long?): GestureDestination.Recording = when (mode) {
-    SecondaryMode.Disabled -> GestureDestination.IndexAgent
+    SecondaryMode.Disabled -> GestureDestination.Nothing
     SecondaryMode.Search -> GestureDestination.WebSearch
     SecondaryMode.IndexWebhook -> GestureDestination.WebhookOnly
     SecondaryMode.McpSandbox -> GestureDestination.McpSandbox(mcpGroupId)

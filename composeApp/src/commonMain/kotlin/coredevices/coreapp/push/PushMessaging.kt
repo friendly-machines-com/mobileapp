@@ -9,6 +9,7 @@ import coredevices.coreapp.api.BugReports
 import coredevices.coreapp.api.PushService
 import coredevices.coreapp.api.PushTokenRequest
 import coredevices.pebble.Platform
+import coredevices.util.PrivacyPolicy
 import coredevices.util.emailOrNull
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
@@ -29,6 +30,7 @@ class PushMessaging(
     private val logger = Logger.withTag("PushMessaging")
 
     fun init() {
+        if (!PrivacyPolicy.PUSH_MESSAGING_ENABLED) return
         NotifierManager.addListener(object : NotifierManager.Listener {
             override fun onNewToken(token: String) {
                 logger.v { "onNewToken" }

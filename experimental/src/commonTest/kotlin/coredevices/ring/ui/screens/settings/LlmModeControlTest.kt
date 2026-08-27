@@ -19,13 +19,8 @@ class LlmModeControlTest {
     }
 
     @Test
-    fun everyModeIsOfferedExactlyOnceMostCloudFirst() {
-        assertEquals(LlmMode.entries.toSet(), llmModeOptions.toSet())
-        assertEquals(llmModeOptions.size, llmModeOptions.toSet().size)
-        assertEquals(
-            listOf(false, true, true),
-            llmModeOptions.map { it.usesLocalCactus() },
-        )
+    fun onlyLocalModeIsOfferedInThePrivacyBuild() {
+        assertEquals(listOf(LlmMode.LocalOnly), llmModeOptions)
     }
 
     @Test

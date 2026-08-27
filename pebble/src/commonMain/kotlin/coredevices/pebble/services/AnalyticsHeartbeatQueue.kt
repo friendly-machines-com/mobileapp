@@ -5,6 +5,7 @@ import com.russhwolf.settings.Settings
 import coredevices.database.AnalyticsHeartbeatDao
 import coredevices.database.AnalyticsHeartbeatEntity
 import coredevices.pebble.ui.SettingsKeys.KEY_ENABLE_MEMFAULT_UPLOADS
+import coredevices.util.PrivacyPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -34,7 +35,9 @@ class AnalyticsHeartbeatQueue(
 
     // Non-suspending — safe to call from any context
     fun enqueue(serial: String, fwVersion: String?, payload: ByteArray) {
-        if (!settings.getBoolean(KEY_ENABLE_MEMFAULT_UPLOADS, true)) {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED ||
+            !settings.getBoolean(KEY_ENABLE_MEMFAULT_UPLOADS, false)
+        ) {
             logger.d { "Not uploading Memfault chunks (disabled in settings)" }
             return
         }
@@ -69,6 +72,7 @@ class AnalyticsHeartbeatQueue(
     // Called externally (e.g. background sync) to retry any rows that failed to upload.
     // The mutex ensures this doesn't run concurrently with the processing loop's own upload pass.
     suspend fun uploadPendingFromDb() = uploadMutex.withLock {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return@withLock
         evictOldestIfOverLimit()
         while (true) {
             val batch = dao.getBatch(UPLOAD_BATCH_SIZE)

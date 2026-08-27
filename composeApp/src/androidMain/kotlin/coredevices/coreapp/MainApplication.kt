@@ -62,9 +62,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        if (isDebuggableBuild) {
-            Firebase.crashlytics.setCrashlyticsCollectionEnabled(false)
-        }
+        Firebase.crashlytics.setCrashlyticsCollectionEnabled(false)
         startKoin {
             modules(
                 module {

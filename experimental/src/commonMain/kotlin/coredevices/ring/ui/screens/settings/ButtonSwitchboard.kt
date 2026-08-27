@@ -59,6 +59,7 @@ import coredevices.ring.service.button.GestureDestination
 import coredevices.ring.service.button.GestureKind
 import coredevices.ring.service.button.RingGesture
 import coredevices.ring.ui.theme.IndexTheme
+import coredevices.util.PrivacyPolicy
 
 private val DOT = 9.dp
 private val TILE_WIDTH = 168.dp
@@ -92,9 +93,11 @@ fun destinationsFor(kind: GestureKind, hasSandboxGroups: Boolean): List<GestureD
     )
     GestureKind.Recording -> buildList {
         add(GestureDestination.IndexAgent)
-        add(GestureDestination.WebSearch)
-        add(GestureDestination.WebhookOnly)
-        if (hasSandboxGroups) add(GestureDestination.McpSandbox(null))
+        if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+            add(GestureDestination.WebSearch)
+            add(GestureDestination.WebhookOnly)
+            if (hasSandboxGroups) add(GestureDestination.McpSandbox(null))
+        }
         add(GestureDestination.Nothing)
     }
 }

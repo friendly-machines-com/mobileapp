@@ -9,8 +9,8 @@ import kotlin.test.assertEquals
 class LlmModePreferenceTest {
 
     @Test
-    fun defaultsToCloudOnly() {
-        assertEquals(LlmMode.RemoteOnly, PreferencesImpl(MapSettings()).llmMode.value)
+    fun defaultsToLocalOnly() {
+        assertEquals(LlmMode.LocalOnly, PreferencesImpl(MapSettings()).llmMode.value)
     }
 
     @Test

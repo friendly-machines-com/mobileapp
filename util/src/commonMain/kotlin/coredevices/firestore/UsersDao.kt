@@ -5,6 +5,7 @@ import com.russhwolf.settings.Settings
 import com.russhwolf.settings.set
 import coredevices.analytics.AnalyticsBackend
 import coredevices.util.AppResumed
+import coredevices.util.PrivacyPolicy
 import coredevices.util.auth.NoOpSilentSignIn
 import coredevices.util.auth.SilentSignIn
 import dev.gitlive.firebase.Firebase
@@ -94,6 +95,12 @@ class UsersDaoImpl(
     private var isInitialStartup = true
 
     override fun init() {
+        if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            logger.i { "Cloud services disabled; Firebase authentication will not be initialized" }
+            isInitialStartup = false
+            _user.tryEmit(null)
+            return
+        }
         GlobalScope.launch {
             Firebase.auth.idTokenChanged
                 .onStart { emit(Firebase.auth.currentUser) }
@@ -203,6 +210,11 @@ class UsersDaoImpl(
                             hadNonAnonymousAccount = false
                         }
                         _user.emit(null)
+                        if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+                            logger.i { "Cloud services disabled; remaining signed out" }
+                            isInitialStartup = false
+                            return@flatMapLatest flowOf(null)
+                        }
                         logger.i { "Logging into firebase anonymously" }
                         try {
                             withContext(NonCancellable) {

@@ -78,7 +78,7 @@ class GestureRoutingTest {
     @Test
     fun secondaryModeMigratesToClickHoldRoute() {
         assertEquals(
-            GestureDestination.IndexAgent,
+            GestureDestination.Nothing,
             routing(secondaryMode = SecondaryMode.Disabled).destinationFor(RingGesture.ClickHold)
         )
         assertEquals(

@@ -5,6 +5,7 @@ import com.russhwolf.settings.Settings
 import coredevices.ring.database.firestore.dao.FirestoreRecordingsDao
 import coredevices.util.CoreConfigHolder
 import coredevices.util.Permission
+import coredevices.util.PrivacyPolicy
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import kotlinx.coroutines.GlobalScope
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.onEach
 private const val LAST_UID_CHECKED_KEY = "ring_index_enable_last_uid_checked"
 
 internal fun listenForUserPresent(recordingsDao: FirestoreRecordingsDao, configHolder: CoreConfigHolder, settings: Settings) {
+    if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) return
     flow {
         emit(Firebase.auth.currentUser)
         emitAll(Firebase.auth.authStateChanged)

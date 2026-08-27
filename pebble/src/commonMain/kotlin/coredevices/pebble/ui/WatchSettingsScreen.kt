@@ -136,6 +136,7 @@ import coredevices.util.CoreConfig
 import coredevices.util.CoreConfigHolder
 import coredevices.util.Permission
 import coredevices.util.PermissionRequester
+import coredevices.util.PrivacyPolicy
 import coredevices.util.STTConfig
 import coredevices.util.WeatherUnit
 import coredevices.util.emailOrNull
@@ -447,9 +448,9 @@ fun rememberSettingsItemsState(navBarNav: NavBarNav?, snackbarDisplay: SnackbarD
     val missingPermissions by permissionRequester.missingPermissions.collectAsState()
     val uiContext = rememberUiContext()
     val analyticsBackend: AnalyticsBackend = koinInject()
-    val enableFirebase = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_FIREBASE_UPLOADS, true)) }
-    val enableMemfault = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_MEMFAULT_UPLOADS, true)) }
-    val enableMixpanel = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_MIXPANEL_UPLOADS, true)) }
+    val enableFirebase = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_FIREBASE_UPLOADS, false)) }
+    val enableMemfault = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_MEMFAULT_UPLOADS, false)) }
+    val enableMixpanel = remember { mutableStateOf(settings.getBoolean(KEY_ENABLE_MIXPANEL_UPLOADS, false)) }
     val enableExperimentalDevices: EnableExperimentalDevices = koinInject()
     val experimentalDevices by enableExperimentalDevices.enabled.collectAsState()
     val appUpdateTracker: AppUpdateTracker = koinInject()
@@ -1631,6 +1632,7 @@ fun rememberSettingsItemsState(navBarNav: NavBarNav?, snackbarDisplay: SnackbarD
                     topLevelType = TopLevelType.Phone,
                     section = Section.Diagnostics,
                     checked = enableFirebase.value,
+                    show = { PrivacyPolicy.TELEMETRY_ENABLED },
                     onCheckChanged = {
                         enableFirebase.value = it
                         settings.set(KEY_ENABLE_FIREBASE_UPLOADS, it)
@@ -1646,6 +1648,7 @@ fun rememberSettingsItemsState(navBarNav: NavBarNav?, snackbarDisplay: SnackbarD
                     topLevelType = TopLevelType.Phone,
                     section = Section.Diagnostics,
                     checked = enableMemfault.value,
+                    show = { PrivacyPolicy.TELEMETRY_ENABLED },
                     onCheckChanged = {
                         enableMemfault.value = it
                         if (!it) {
@@ -1660,6 +1663,7 @@ fun rememberSettingsItemsState(navBarNav: NavBarNav?, snackbarDisplay: SnackbarD
                     topLevelType = TopLevelType.Phone,
                     section = Section.Diagnostics,
                     checked = enableMixpanel.value,
+                    show = { PrivacyPolicy.TELEMETRY_ENABLED },
                     onCheckChanged = {
                         enableMixpanel.value = it
                         settings.set(KEY_ENABLE_MIXPANEL_UPLOADS, it)

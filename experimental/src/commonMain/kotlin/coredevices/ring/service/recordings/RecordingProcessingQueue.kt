@@ -32,6 +32,7 @@ import coredevices.ring.service.parseAsButtonSequence
 import coredevices.ring.service.recordings.button.RecordingOperationFactory
 import coredevices.ring.storage.RecordingStorage
 import coredevices.ring.util.trace.RingTraceSession
+import coredevices.util.PrivacyPolicy
 import coredevices.util.queue.PersistentQueueScheduler
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
@@ -111,6 +112,7 @@ class RecordingProcessingQueue(
         // firestoreId-only filter silently dropped.
         val preferences: Preferences = get()
         recordingRepository.getAllRecordings().drop(1).debounce(2000).onEach { recordings ->
+            if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) return@onEach
             if (!preferences.backupEnabled.value) return@onEach
             val firestoreRecordingsDao: FirestoreRecordingsDao = get()
             val recordingEntryDao: RecordingEntryDao = get()
@@ -230,8 +232,12 @@ class RecordingProcessingQueue(
         // listener on sign-out and resubscribes on sign-in.
         @OptIn(ExperimentalCoroutinesApi::class)
         flow {
-            emit(Firebase.auth.currentUser)
-            Firebase.auth.authStateChanged.collect { emit(it) }
+            if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+                emit(Firebase.auth.currentUser)
+                Firebase.auth.authStateChanged.collect { emit(it) }
+            } else {
+                emit(null)
+            }
         }.flatMapLatest { user ->
             val firestoreRecordingsDao: FirestoreRecordingsDao = get()
             if (user == null) flow<QuerySnapshot> {} else firestoreRecordingsDao.changesFlow()
@@ -404,12 +410,20 @@ class RecordingProcessingQueue(
         transferId: Long?,
         buttonSequence: String?
     ) {
-        try {
-            trace.markEvent("recording_preprocessing_start", TraceEventData.TransferIdInfo(transferId ?: -1))
-            recordingPreprocessor.preprocess(fileId)
-            trace.markEvent("recording_preprocessing_end", TraceEventData.TransferIdInfo(transferId ?: -1))
-        } catch (e: Exception) {
-            logger.e(e) { "Preprocessing failed for file $fileId: ${e.message}, skipping preprocessing" }
+        if (!recordingStorage.recordingExists(fileId)) {
+            try {
+                trace.markEvent("recording_preprocessing_start", TraceEventData.TransferIdInfo(transferId ?: -1))
+                recordingPreprocessor.preprocess(fileId)
+                trace.markEvent("recording_preprocessing_end", TraceEventData.TransferIdInfo(transferId ?: -1))
+            } catch (e: Exception) {
+                logger.e(e) { "Preprocessing failed for file $fileId: ${e.message}; retaining raw audio for retry" }
+                throw e
+            }
+
+            // The processed audio becomes the durable source of truth before
+            // transcription starts. commitLocalRecording validates the M4A and
+            // only then discards the raw transfer audio.
+            recordingStorage.commitLocalRecording(fileId)
         }
         val operation = try {
             recordingOperationFactory.createForButtonSequence(
@@ -457,9 +471,14 @@ class RecordingProcessingQueue(
                     )
                 }
             }
+            recordingStorage.cleanupWorkingRecording(fileId)
             return
         }
-        operation.run(handle)
+        try {
+            operation.run(handle)
+        } finally {
+            recordingStorage.cleanupWorkingRecording(fileId)
+        }
     }
 
     private suspend fun handleRecording(handle: TaskHandle, task: ProcessingTask.LocalAudioRecording) {

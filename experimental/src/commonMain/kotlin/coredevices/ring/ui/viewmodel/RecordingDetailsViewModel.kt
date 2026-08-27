@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -173,12 +174,17 @@ class RecordingDetailsViewModel(
             try {
                 val state = itemState.value as? ItemState.Loaded
                 val firestoreId = state?.recording?.firestoreId
+                val audioFileNames = recordingRepo.getRecordingEntriesFlow(recordingId)
+                    .first()
+                    .mapNotNull { it.fileName }
+                    .distinct()
                 // Soft-delete any items linked back to this recording so the
                 // home feed doesn't show orphaned chips.
                 val recId = firestoreId?.takeIf { it.isNotBlank() } ?: "local:$recordingId"
                 val linked = if (alsoDeleteItems) itemRepo.getByRecording(recId) else emptyList()
                 withContext(NonCancellable) {
                     linked.forEach { itemRepo.softDelete(it.firestoreId) }
+                    audioFileNames.forEach { recordingStorage.deleteRecording(it) }
                     recordingRepo.deleteRecording(recordingId)
                 }
                 snackbarHostState.showSnackbar(

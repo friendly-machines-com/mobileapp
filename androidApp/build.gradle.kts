@@ -14,6 +14,39 @@ val properties = Properties().apply {
     }
 }
 val localReleaseBuild = properties["LOCAL_RELEASE_BUILD"]?.toString()?.toBooleanStrictOrNull() ?: false
+val privacyKeystorePath =
+    System.getenv("PRIVACY_KEYSTORE_PATH") ?: properties.getProperty("PRIVACY_KEYSTORE_PATH")
+val privacyKeystorePassword =
+    System.getenv("PRIVACY_KEYSTORE_PASSWORD") ?: properties.getProperty("PRIVACY_KEYSTORE_PASSWORD")
+val privacyKeyAlias =
+    System.getenv("PRIVACY_KEY_ALIAS") ?: properties.getProperty("PRIVACY_KEY_ALIAS")
+val privacyKeyPassword =
+    System.getenv("PRIVACY_KEY_PASSWORD") ?: properties.getProperty("PRIVACY_KEY_PASSWORD")
+
+val bundledSttName = "parakeet-tdt-0.6b-v3-cq4.zip"
+val bundledSttUrl =
+    "https://huggingface.co/Cactus-Compute/parakeet-tdt-0.6b-v3/resolve/v2.1.0/$bundledSttName"
+val bundledSttSha256 = "a688a13072db80d45a6526e14284edc7f1b050bdfbdcac5ef36437880d9335a8"
+val bundledModelAssets = layout.buildDirectory.dir("generated/privacyModelAssets")
+val bundledSttFile = bundledModelAssets.map { it.file("models/$bundledSttName") }
+
+val prepareBundledPrivacySttModel = tasks.register<Exec>("prepareBundledPrivacySttModel") {
+    group = "build setup"
+    description = "Fetches and verifies the speech model bundled in Pebble Privacy."
+    inputs.property("url", bundledSttUrl)
+    inputs.property("sha256", bundledSttSha256)
+    outputs.file(bundledSttFile)
+    // Always execute the cheap verification so a corrupted cached artifact
+    // cannot silently enter an APK.
+    outputs.upToDateWhen { false }
+    commandLine(
+        "sh",
+        rootProject.file("scripts/prepare-bundled-stt-model.sh").absolutePath,
+        bundledSttUrl,
+        bundledSttSha256,
+        bundledSttFile.get().asFile.absolutePath,
+    )
+}
 
 // Most recent tag reachable from HEAD, so a release branch versions from its own tag.
 val gitVersionName = providers.exec {
@@ -34,19 +67,19 @@ android {
     namespace = "coredevices.coreapp"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
-    if (!localReleaseBuild) {
+    if (!localReleaseBuild && privacyKeystorePath != null) {
         signingConfigs {
             create("release") {
-                storeFile = file("../keystore.jks")
-                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
-                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                storeFile = file(privacyKeystorePath)
+                storePassword = privacyKeystorePassword
+                keyAlias = privacyKeyAlias
+                keyPassword = privacyKeyPassword
             }
         }
     }
 
     defaultConfig {
-        applicationId = "coredevices.coreapp"
+        applicationId = "coredevices.coreapp.privacy"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -72,7 +105,7 @@ android {
                 configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
                     mappingFileUploadEnabled = false
                 }
-            } else {
+            } else if (privacyKeystorePath != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
             isDebuggable = false
@@ -90,6 +123,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    sourceSets.getByName("main").assets.srcDir(bundledModelAssets.get().asFile)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(prepareBundledPrivacySttModel)
 }
 
 dependencies {

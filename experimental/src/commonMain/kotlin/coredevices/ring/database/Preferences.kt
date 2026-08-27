@@ -79,7 +79,7 @@ class PreferencesImpl(private val settings: Settings): Preferences {
                 ?: if (settings.getBoolean("use_cactus_agent", false)) {
                     LlmMode.LocalOnly.id
                 } else {
-                    LlmMode.RemoteOnly.id
+                    LlmMode.LocalOnly.id
                 }
         )
     )
@@ -134,7 +134,7 @@ class PreferencesImpl(private val settings: Settings): Preferences {
     )
     override val approvedBeeperContacts = _approvedBeeperContacts.asStateFlow()
     private val _secondaryMode = MutableStateFlow(
-        SecondaryMode.fromId(settings.getInt("ring_secondary_mode", SecondaryMode.Search.id))
+        SecondaryMode.fromId(settings.getInt("ring_secondary_mode", SecondaryMode.Disabled.id))
     )
     override val secondaryMode = _secondaryMode.asStateFlow()
     private val _secondaryModeMcpGroupId = MutableStateFlow(
@@ -151,12 +151,14 @@ class PreferencesImpl(private val settings: Settings): Preferences {
             .let { NoteProvider.fromId(it)!! }
     )
     override val noteProvider = _noteProvider.asStateFlow()
-    private val _noteShortcut = MutableStateFlow<NoteShortcutType>(settings.getStringOrNull("note_shortcut")
-        ?.let { Json.decodeFromString(it) } ?: NoteShortcutType.SendToMe)
+    private val _noteShortcut = MutableStateFlow<NoteShortcutType>(
+        settings.getStringOrNull("note_shortcut")?.let { Json.decodeFromString(it) }
+            ?: NoteShortcutType.SendToNoteProvider(NoteProvider.Builtin)
+    )
     override val noteShortcut: StateFlow<NoteShortcutType> = _noteShortcut.asStateFlow()
     private val _autoDismissActionNotifications = MutableStateFlow(settings.getBoolean("auto_dismiss_action_notifications", true))
     override val autoDismissActionNotifications = _autoDismissActionNotifications.asStateFlow()
-    private val _backupEnabled = MutableStateFlow(settings.getBoolean("backup_enabled", true))
+    private val _backupEnabled = MutableStateFlow(settings.getBoolean("backup_enabled", false))
     override val backupEnabled = _backupEnabled.asStateFlow()
     private val _phoneCalendarEnabled = MutableStateFlow(settings.getBoolean("phone_calendar_enabled", false))
     override val phoneCalendarEnabled = _phoneCalendarEnabled.asStateFlow()

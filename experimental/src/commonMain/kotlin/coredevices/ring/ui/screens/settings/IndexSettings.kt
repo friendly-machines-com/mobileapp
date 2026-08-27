@@ -114,6 +114,7 @@ import coredevices.ui.SignInDialog
 import coredevices.util.Permission
 import coredevices.util.PermissionRequester
 import coredevices.util.Platform
+import coredevices.util.PrivacyPolicy
 import coredevices.util.granted
 import coredevices.util.isAndroid
 import coredevices.util.isIOS
@@ -189,10 +190,10 @@ fun IndexSettings(coreNav: CoreNav) {
 
     val colors = IndexTheme.colors
 
-    if (showSignInDialog) {
+    if (PrivacyPolicy.CLOUD_SERVICES_ENABLED && showSignInDialog) {
         SignInDialog(onDismiss = { showSignInDialog = false })
     }
-    IndexWebhookSheetHost()
+    if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) IndexWebhookSheetHost()
     if (showContactsDialog && platform.isAndroid) {
         SettingsBeeperContactsDialog(
             onDismissRequest = viewModel::closeContactsDialog
@@ -224,7 +225,7 @@ fun IndexSettings(coreNav: CoreNav) {
             }
         )
     }
-    if (showBackupDialog) {
+    if (PrivacyPolicy.CLOUD_SERVICES_ENABLED && showBackupDialog) {
         BackupDialog(
             viewModel = viewModel,
             onDismiss = { showBackupDialog = false }
@@ -433,19 +434,21 @@ fun IndexSettings(coreNav: CoreNav) {
                     trailingContent = {}
                 )
             }
-            item {
-                SettingsRow(
-                    title = "Backup",
-                    subtitle = "Sync, manage, or delete cloud backup",
-                    onClick = { showBackupDialog = true },
-                )
-            }
-            item {
-                SettingsRow(
-                    title = "MCP & Tool Settings",
-                    subtitle = "Sandbox groups, models, per-tool config",
-                    onClick = { coreNav.navigateTo(RingRoutes.McpSandboxGroups) },
-                )
+            if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+                item {
+                    SettingsRow(
+                        title = "Backup",
+                        subtitle = "Sync, manage, or delete cloud backup",
+                        onClick = { showBackupDialog = true },
+                    )
+                }
+                item {
+                    SettingsRow(
+                        title = "MCP & Tool Settings",
+                        subtitle = "Sandbox groups, models, per-tool config",
+                        onClick = { coreNav.navigateTo(RingRoutes.McpSandboxGroups) },
+                    )
+                }
             }
             item {
                 SettingsRow(
@@ -470,16 +473,18 @@ fun IndexSettings(coreNav: CoreNav) {
                     )
                 }
             }
-            item {
-                SettingsRow(
-                    title = "Webhook",
-                    subtitle = if (webhookIsLinked) "Configured, tap to modify" else "Not Linked",
-                    onClick = {
-                        configuredWebhookGesture
-                            ?.let { webhookViewModel.openDialog(it) }
-                            ?: webhookViewModel.openDialog()
-                    },
-                )
+            if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+                item {
+                    SettingsRow(
+                        title = "Webhook",
+                        subtitle = if (webhookIsLinked) "Configured, tap to modify" else "Not Linked",
+                        onClick = {
+                            configuredWebhookGesture
+                                ?.let { webhookViewModel.openDialog(it) }
+                                ?: webhookViewModel.openDialog()
+                        },
+                    )
+                }
             }
             item {
                 SettingsRow(
@@ -584,7 +589,12 @@ internal fun LlmMode.modeDetail(): String = when (this) {
 }
 
 /** Offered most-cloud first; the enum's own order is persistence ids, not a sensible reading order. */
-internal val llmModeOptions = listOf(LlmMode.RemoteOnly, LlmMode.RemoteFirst, LlmMode.LocalOnly)
+internal val llmModeOptions =
+    if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+        listOf(LlmMode.RemoteOnly, LlmMode.RemoteFirst, LlmMode.LocalOnly)
+    } else {
+        listOf(LlmMode.LocalOnly)
+    }
 
 /** The Local LLM cannot drive a sandbox group's model, so local modes need the default
  *  group left on Index Agent. */

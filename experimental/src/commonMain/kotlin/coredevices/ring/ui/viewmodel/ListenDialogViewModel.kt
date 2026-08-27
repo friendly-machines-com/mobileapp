@@ -82,8 +82,7 @@ class ListenDialogViewModel(private val dismiss: () -> Unit): ViewModel(), KoinC
                 }
                 appScope.launch(Dispatchers.IO) {
                     recordingProcessingQueue.queueLocalAudioProcessing(fileId = fileName)
-                    recordingStorage.persistRecording(fileName)
-                    logger.i { "Persisted recording $fileName" }
+                    logger.i { "Queued recording $fileName for local processing" }
                 }
                 onRecordingCompleted()
             }

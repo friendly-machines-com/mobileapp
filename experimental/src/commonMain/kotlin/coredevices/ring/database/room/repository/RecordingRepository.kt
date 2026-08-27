@@ -10,6 +10,7 @@ import coredevices.ring.database.firestore.dao.FirestoreRecordingsDao
 import coredevices.ring.database.room.RingDatabase
 import co.touchlab.kermit.Logger
 import coredevices.ring.service.RecordingBackgroundScope
+import coredevices.util.PrivacyPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
@@ -139,7 +140,7 @@ class RecordingRepository(
         withContext(Dispatchers.IO) {
             val rec = localRecordingDao.getRecording(id) ?: return@withContext
             localRecordingDao.deleteRecording(rec)
-            bgScope.launch(Dispatchers.IO) {
+            if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) bgScope.launch(Dispatchers.IO) {
                 rec.firestoreId?.takeIf { it.isNotBlank() }?.let { firestoreId ->
                     try {
                         firestoreRecordingsDao.deleteRecordingsByIds(listOf(firestoreId))

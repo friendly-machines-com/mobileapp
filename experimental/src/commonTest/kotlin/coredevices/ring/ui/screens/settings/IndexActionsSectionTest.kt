@@ -94,10 +94,25 @@ class IndexActionsSectionTest {
     @Test
     fun `note destinations mark unauthorized providers as unconnected`() {
         val options = noteDestOptions(listOf(NoteProvider.Builtin), isAndroid = true)
-        assertEquals(NoteProvider.entries, options.map { it.provider })
+        assertEquals(
+            NoteProvider.entries.filter { it != NoteProvider.Notion },
+            options.map { it.provider },
+        )
         assertEquals(
             listOf(NoteProvider.Builtin),
             options.filter { it.connected }.map { it.provider }
+        )
+    }
+
+    @Test
+    fun `cloud providers are not offered in the privacy build`() {
+        assertFalse(
+            noteDestOptions(NoteProvider.entries, isAndroid = true)
+                .any { it.provider == NoteProvider.Notion }
+        )
+        assertFalse(
+            reminderDestOptions(ReminderProvider.entries, isAndroid = true)
+                .any { it.provider == ReminderProvider.GoogleTasks }
         )
     }
 

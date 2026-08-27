@@ -68,6 +68,7 @@ import coredevices.ring.agent.builtin_servlets.messaging.MessagingServlet
 import coredevices.ring.agent.builtin_servlets.notes.NoteProvider
 import coredevices.ring.agent.builtin_servlets.notes.NoteServlet
 import coredevices.ring.agent.builtin_servlets.reminders.ReminderProvider
+import coredevices.util.PrivacyPolicy
 import coredevices.ring.agent.builtin_servlets.reminders.ReminderServlet
 import coredevices.ring.database.Preferences
 import coredevices.ring.database.room.repository.McpSandboxRepository
@@ -116,6 +117,7 @@ internal fun noteDestOptions(
     isAndroid: Boolean,
 ): List<DestOption<NoteProvider>> = NoteProvider.entries
     .filter { it != NoteProvider.Tasker || isAndroid }
+    .filter { PrivacyPolicy.CLOUD_SERVICES_ENABLED || it != NoteProvider.Notion }
     .map { DestOption(it, it.settingsTitle, it in available) }
 
 internal fun reminderDestOptions(
@@ -129,6 +131,7 @@ internal fun reminderDestOptions(
             else -> true
         }
     }
+    .filter { PrivacyPolicy.CLOUD_SERVICES_ENABLED || it != ReminderProvider.GoogleTasks }
     .map { DestOption(it, it.settingsTitle, it in available) }
 
 /** Actions that are switched off because they still need linking get a Connect button. */

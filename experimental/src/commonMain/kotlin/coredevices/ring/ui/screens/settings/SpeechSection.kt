@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.TextButton
 import coredevices.ui.M3Dialog
 import coredevices.ring.ui.theme.IndexTheme
+import coredevices.util.PrivacyPolicy
 import coredevices.util.models.CactusSTTMode
 import coredevices.util.transcription.SpokenLanguageOptions
 
@@ -52,13 +53,18 @@ private const val WISPR_URL = "https://wispr.ai/"
 
 /** The engines the Index pipeline honours. Rebble modes are routed by STTRouter for the watch
  *  and never reach the ring's transcription service, so they are not offered here. */
-internal val indexSpeechModes: List<CactusSTTMode> = listOf(
-    CactusSTTMode.PlatformOnly,
-    CactusSTTMode.RemoteOnly,
-    CactusSTTMode.RemoteFirst,
-    CactusSTTMode.LocalFirst,
-    CactusSTTMode.LocalOnly,
-)
+internal val indexSpeechModes: List<CactusSTTMode> =
+    if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+        listOf(
+            CactusSTTMode.PlatformOnly,
+            CactusSTTMode.RemoteOnly,
+            CactusSTTMode.RemoteFirst,
+            CactusSTTMode.LocalFirst,
+            CactusSTTMode.LocalOnly,
+        )
+    } else {
+        listOf(CactusSTTMode.LocalOnly)
+    }
 
 internal fun CactusSTTMode.speechEngineName(): String = when (this) {
     CactusSTTMode.PlatformOnly -> "iOS Speech Recognition"

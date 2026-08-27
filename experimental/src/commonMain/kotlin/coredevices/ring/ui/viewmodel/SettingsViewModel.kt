@@ -478,6 +478,8 @@ class SettingsViewModel(
                     recordingStorage.deleteAllCachedMetadata()
                     // Delete cached audio files from disk
                     recordingStorage.clearCacheDirectory()
+                    // Delete processed M4A recordings from durable app storage
+                    recordingStorage.clearDataDirectory()
                     // Wipe items + lists too — Firestore is unaffected
                     // because IndexFeedSyncService's push observer reads
                     // through the Room flow (a hard DELETE removes rows
@@ -488,7 +490,7 @@ class SettingsViewModel(
                     listRepository.deleteAllLocal()
                 }
                 _backupStatus.value = "Local feed deleted"
-                log.i { "All local feed data deleted (recordings, entries, items, lists, cache, metadata)" }
+                log.i { "All local feed data deleted (recordings, entries, items, lists, audio, metadata)" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to delete local feed" }
                 _backupStatus.value = "Delete failed: ${e.message}"

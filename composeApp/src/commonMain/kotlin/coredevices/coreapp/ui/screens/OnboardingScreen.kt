@@ -58,6 +58,7 @@ import coredevices.util.CoreConfigHolder
 import coredevices.util.DoneInitialOnboarding
 import coredevices.util.Permission
 import coredevices.util.PermissionRequester
+import coredevices.util.PrivacyPolicy
 import coredevices.util.name
 import coredevices.util.rememberUiContext
 import coredevices.util.requestIsFullScreen
@@ -89,7 +90,6 @@ class OnboardingViewModel(private val config: CoreConfigHolder) : ViewModel() {
     val stage = mutableStateOf(OnboardingStage.Welcome)
     val deviceChoice = mutableStateOf<DeviceChoice?>(null)
     val requestedPermissions = mutableStateOf(emptySet<Permission>())
-    val coreConfig = config.config
     fun setIndexEnabled(enabled: Boolean) {
         config.update(config.config.value.copy(enableIndex = enabled))
     }
@@ -217,7 +217,9 @@ fun OnboardingScreen(
                         }
                         logger.v { "permissionToRequest = $permissionToRequest  /  missingPermissions = $missingPermissions " }
                         if (permissionToRequest == null) {
-                            viewModel.stage.value = OnboardingStage.SignIn
+                            viewModel.stage.value =
+                                if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) OnboardingStage.SignIn
+                                else OnboardingStage.Done
                         } else {
                             val warnBeforeFullScreenRequest = permissionToRequest.requestIsFullScreen()
                             LaunchedEffect(permissionToRequest) {
@@ -266,7 +268,6 @@ fun OnboardingScreen(
                 }
 
                 OnboardingStage.SignIn -> {
-                    val coreConfig by viewModel.coreConfig.collectAsState()
                     Column(
                         modifier = Modifier.fillMaxSize().padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -286,13 +287,11 @@ fun OnboardingScreen(
                             // to the existing account if Firebase reports a collision.
                             skipAccountSwitchConfirmation = true,
                         )
-                        if (!coreConfig.enableIndex) {
-                            PebbleElevatedButton(
-                                text = "Skip",
-                                onClick = { viewModel.stage.value = OnboardingStage.Done },
-                                primaryColor = true,
-                            )
-                        }
+                        PebbleElevatedButton(
+                            text = "Skip",
+                            onClick = { viewModel.stage.value = OnboardingStage.Done },
+                            primaryColor = true,
+                        )
                     }
                 }
 

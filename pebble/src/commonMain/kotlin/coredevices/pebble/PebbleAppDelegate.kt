@@ -17,6 +17,7 @@ import coredevices.pebble.services.PebbleWebServices
 import coredevices.util.AppResumed
 import coredevices.util.DoneInitialOnboarding
 import coredevices.util.PermissionRequester
+import coredevices.util.PrivacyPolicy
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.crashlytics.crashlytics
 import io.rebble.libpebblecommon.connection.BleDiscoveredPebbleDevice
@@ -65,8 +66,10 @@ class PebbleAppDelegate(
 
     fun init() {
         logger.d { "init()" }
-        memfaultChunkQueue.startProcessing(GlobalScope)
-        analyticsHeartbeatQueue.startProcessing(GlobalScope)
+        if (PrivacyPolicy.TELEMETRY_ENABLED) {
+            memfaultChunkQueue.startProcessing(GlobalScope)
+            analyticsHeartbeatQueue.startProcessing(GlobalScope)
+        }
         permissionsRequester.init()
         if (platform == Platform.Android) {
             // We need to init on android synchronously, so that koin graph is ready when e.g.
@@ -248,10 +251,10 @@ class PebbleAppDelegate(
                 libPebble.requestLockerSync().await()
             },
             scope.launch {
-                memfaultChunkQueue.uploadPendingFromDb()
+                if (PrivacyPolicy.TELEMETRY_ENABLED) memfaultChunkQueue.uploadPendingFromDb()
             },
             scope.launch {
-                analyticsHeartbeatQueue.uploadPendingFromDb()
+                if (PrivacyPolicy.TELEMETRY_ENABLED) analyticsHeartbeatQueue.uploadPendingFromDb()
             },
         )
         jobs.joinAll()

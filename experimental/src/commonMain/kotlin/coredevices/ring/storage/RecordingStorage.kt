@@ -5,15 +5,13 @@ import coredevices.ring.audio.M4aDecoder
 import coredevices.ring.audio.M4aEncoder
 import coredevices.ring.data.entity.room.CachedRecordingMetadata
 import coredevices.ring.database.room.dao.CachedRecordingMetadataDao
-import coredevices.ring.util.openReadChannel
+import coredevices.util.PrivacyPolicy
 import coredevices.util.writeWavHeader
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import dev.gitlive.firebase.storage.File
 import dev.gitlive.firebase.storage.FirebaseStorageMetadata
 import dev.gitlive.firebase.storage.storage
-import io.ktor.utils.io.exhausted
-import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -55,14 +53,14 @@ interface RecordingStorage {
 
     /**
      * Open a sink for writing recording data, storing temporarily in cache
-     * until [persistRecording] is called
+     * until [commitLocalRecording] is called
      * @param id unique identifier for the recording, cannot contain characters that are invalid in file names
      */
     suspend fun openRecordingSink(id: String, sampleRate: Int, mimeType: String): Sink
 
     /**
      * Open a sink for writing the original raw version of a recording, storing temporarily in cache
-     * until [persistRecording] is called
+     * until [commitLocalRecording] is called
      * @param id unique identifier for the recording, cannot contain characters that are invalid in file names
      */
     suspend fun openOriginalRecordingSink(id: String, sampleRate: Int, mimeType: String): Sink
@@ -73,18 +71,18 @@ interface RecordingStorage {
     suspend fun openRecordingSource(idNoSuffix: String, useOriginalAudio: Boolean = false): Pair<Source, RecordingSourceInfo>
 
     /**
-     * Open a source for reading recording data only if it already exists in cache,
-     * without attempting to download from Firebase Storage.
-     * Usually prefer [openRecordingSource].
+     * Open a source for reading recording data only from this device.
      */
     suspend fun openCachedRecordingSource(idNoSuffix: String, useOriginalAudio: Boolean = false): Pair<Source, RecordingSourceInfo>?
 
     /**
-     * Moves a recording from cache to persistent data storage,
-     * should be used once recording is complete & validated
+     * Encodes the processed working copy and commits it to durable app storage.
      * @param id unique identifier for the recording
      */
-    suspend fun persistRecording(id: String)
+    suspend fun commitLocalRecording(id: String)
+
+    /** Deletes transient PCM copies after a durable commit. */
+    suspend fun cleanupWorkingRecording(id: String)
 
     suspend fun uploadRecordingPcm(
         id: String,
@@ -97,7 +95,7 @@ interface RecordingStorage {
      * Deletes a recording from persistent storage
      * @param id unique identifier for the recording
      */
-    fun deleteRecording(id: String)
+    suspend fun deleteRecording(id: String)
 
     /**
      * Deletes a recording from cache
@@ -120,6 +118,9 @@ interface RecordingStorage {
      * Clear all files from the recordings cache directory.
      */
     fun clearCacheDirectory()
+
+    /** Clear all durable recording files. */
+    fun clearDataDirectory()
 
     /**
      * Delete a recording's audio file from Firebase Storage.
@@ -145,13 +146,13 @@ interface RecordingStorage {
 class RealRecordingStorage(
     private val cachedMetadataDao: CachedRecordingMetadataDao,
     private val documentEncryptor: coredevices.ring.encryption.DocumentEncryptor,
-    private val preferences: coredevices.ring.database.Preferences,
 ) : RecordingStorage {
     companion object {
         private val logger = Logger.withTag(RealRecordingStorage::class.simpleName!!)
-        private const val FS_WRITE_BUFFER_SIZE = 8192
         private const val PCM_MIME = "audio/raw"
         private const val M4A_MIME = "audio/mp4"
+        private const val DURABLE_SUFFIX = ".m4a"
+        private const val STAGING_SUFFIX = ".tmp"
     }
 
     private val m4aEncoder = M4aEncoder()
@@ -193,62 +194,25 @@ class RealRecordingStorage(
         return@withContext SystemFileSystem.sink(Path(getRecordingsCacheDirectory(), "$id-original")).buffered()
     }
 
-    private suspend fun getOrDownloadCachedRecording(id: String): Pair<Path, RecordingStorage.RecordingSourceInfo> {
+    private fun durablePath(id: String): Path =
+        Path(getRecordingsDataDirectory(), "$id$DURABLE_SUFFIX")
+
+    private suspend fun getLocalCachedRecording(id: String): Pair<Path, RecordingStorage.RecordingSourceInfo> {
         val cachedPath = Path(getRecordingsCacheDirectory(), id)
         var cachedMetadata = cachedMetadataDao.get(id)
-        return if (!SystemFileSystem.exists(cachedPath) || cachedMetadata == null) { // Not in cache, download
-            logger.d { "Downloading recording $id" }
-            val path = "recordings/${Firebase.auth.currentUser!!.uid}/$id"
-            val ref = Firebase.storage.reference(path)
-
-            // Grab metadata from firebase to learn the original PCM sample rate
-            val fbMeta = ref.getMetadata()
-            val sampleRate = fbMeta?.customMetadata?.get("sampleRate")?.toInt()
-                ?: error("Sample rate for recording $id not in firebase metadata")
-            val isEncrypted = fbMeta.customMetadata?.get("encrypted") == "true"
-            val isPcm = fbMeta.contentType == PCM_MIME
-
-            // Download the payload to a temporary file in the cache directory
-            val m4aTempPath = Path(getRecordingsCacheDirectory(), "$id.download.m4a")
-            try {
-                val channel = ref.openReadChannel()
-                SystemFileSystem.sink(m4aTempPath).buffered().use { output ->
-                    val buf = ByteArray(FS_WRITE_BUFFER_SIZE)
-                    while (!channel.exhausted()) {
-                        val read = channel.readAvailable(buf)
-                        output.write(buf, 0, read)
-                    }
-                }
-
-                // Read the downloaded bytes, decrypting first if necessary
-                var payloadBytes = SystemFileSystem.source(m4aTempPath).buffered().use { src ->
-                    src.readByteArray()
-                }
-                if (isEncrypted) {
-                    val key = documentEncryptor.getKey()
-                        ?: error("Recording $id is encrypted but no decryption key available")
-                    payloadBytes = documentEncryptor.decryptAudio(payloadBytes, key)
-                }
-                if (isPcm) {
-                    // Already raw 16-bit LE PCM — write straight to the cache path
-                    SystemFileSystem.sink(cachedPath).buffered().use { sink ->
-                        sink.write(payloadBytes)
-                    }
-                } else {
-                    // M4A payload — decode to PCM before caching
-                    val decoded = m4aDecoder.decode(payloadBytes)
-                    SystemFileSystem.sink(cachedPath).buffered().use { sink ->
-                        for (s in decoded.samples) sink.writeShortLe(s)
-                    }
-                }
-            } finally {
-                if (SystemFileSystem.exists(m4aTempPath)) {
-                    SystemFileSystem.delete(m4aTempPath)
-                }
+        return if (!SystemFileSystem.exists(cachedPath) || cachedMetadata == null) {
+            val durablePath = durablePath(id)
+            require(SystemFileSystem.exists(durablePath)) {
+                "Recording $id is not available on this device"
             }
-
-            // Cached file is raw PCM regardless of upload format
-            cachedMetadata = CachedRecordingMetadata(id, sampleRate, PCM_MIME)
+            logger.d { "Decoding durable recording $id" }
+            val payload = SystemFileSystem.source(durablePath).buffered().use { it.readByteArray() }
+            val decoded = m4aDecoder.decode(payload)
+            require(decoded.samples.isNotEmpty()) { "Durable recording $id contains no audio" }
+            SystemFileSystem.sink(cachedPath).buffered().use { sink ->
+                for (sample in decoded.samples) sink.writeShortLe(sample)
+            }
+            cachedMetadata = CachedRecordingMetadata(id, decoded.sampleRate, PCM_MIME)
             cachedMetadataDao.insertOrReplace(cachedMetadata)
             val size = SystemFileSystem.metadataOrNull(cachedPath)?.size ?: error("Failed to get size of cached recording $id")
             Pair(cachedPath, RecordingStorage.RecordingSourceInfo(id, cachedMetadata, size))
@@ -262,16 +226,16 @@ class RealRecordingStorage(
     override suspend fun openRecordingSource(idNoSuffix: String, useOriginalAudio: Boolean): Pair<Source, RecordingStorage.RecordingSourceInfo> = withContext(Dispatchers.IO) {
         try {
             val id = if (useOriginalAudio) "$idNoSuffix-original" else idNoSuffix
-            val (path, info) = getOrDownloadCachedRecording(id)
+            val (path, info) = getLocalCachedRecording(id)
             return@withContext Pair(SystemFileSystem.source(path).buffered(), info)
         } catch (e: Exception) {
             if (useOriginalAudio) {
                 logger.w(e) { "Failed to open original recording source for $idNoSuffix, falling back to processed version" }
-                val (path, info) = getOrDownloadCachedRecording(idNoSuffix)
+                val (path, info) = getLocalCachedRecording(idNoSuffix)
                 return@withContext Pair(SystemFileSystem.source(path).buffered(), info)
             } else {
                 logger.w(e) { "Failed to open recording source for $idNoSuffix, falling back to original version" }
-                val (path, info) = getOrDownloadCachedRecording("$idNoSuffix-original")
+                val (path, info) = getLocalCachedRecording("$idNoSuffix-original")
                 return@withContext Pair(SystemFileSystem.source(path).buffered(), info)
             }
         }
@@ -279,39 +243,55 @@ class RealRecordingStorage(
 
     override suspend fun openCachedRecordingSource(idNoSuffix: String, useOriginalAudio: Boolean): Pair<Source, RecordingStorage.RecordingSourceInfo>? = withContext(Dispatchers.IO) {
         val id = if (useOriginalAudio) "$idNoSuffix-original" else idNoSuffix
-        val cachedPath = Path(getRecordingsCacheDirectory(), id)
-        val cachedMetadata = cachedMetadataDao.get(id)
-            ?: return@withContext null
-        if (!SystemFileSystem.exists(cachedPath)) {
-            return@withContext null
+        return@withContext try {
+            val (path, info) = getLocalCachedRecording(id)
+            Pair(SystemFileSystem.source(path).buffered(), info)
+        } catch (_: Exception) {
+            null
         }
-        val size = SystemFileSystem.metadataOrNull(cachedPath)?.size ?: error("Failed to get size of cached recording $id")
-        return@withContext Pair(SystemFileSystem.source(cachedPath).buffered(), RecordingStorage.RecordingSourceInfo(id, cachedMetadata, size))
     }
 
-    override suspend fun persistRecording(id: String) = withContext(Dispatchers.IO) {
-        val encrypt = preferences.useEncryption.value
-        val encryptionKey = if (encrypt) documentEncryptor.getKey() else null
-        if (encrypt && encryptionKey == null) {
-            logger.w { "Encryption enabled but no key available — uploading unencrypted" }
+    override suspend fun commitLocalRecording(id: String) = withContext(Dispatchers.IO) {
+        val destination = durablePath(id)
+        if (SystemFileSystem.exists(destination)) return@withContext
+
+        val source = Path(getRecordingsCacheDirectory(), id)
+        val metadata = cachedMetadataDao.get(id)
+            ?: error("Cached metadata for recording $id not found")
+        require(SystemFileSystem.exists(source)) {
+            "Recording $id does not exist in the working directory"
         }
 
-        for (idToMove in listOf(id, "$id-original")) {
-            val source = Path(getRecordingsCacheDirectory(), idToMove)
-            val cachedMetadata = cachedMetadataDao.get(idToMove)
-                ?: error("Cached metadata for recording $idToMove not found")
-            require(SystemFileSystem.exists(source)) {
-                "Recording $idToMove does not exist in cache"
+        val encoded = m4aEncoder.encode(readPcmFile(source), metadata.sampleRate)
+        val decoded = m4aDecoder.decode(encoded)
+        require(decoded.samples.isNotEmpty()) { "Encoded recording $id contains no audio" }
+        require(decoded.sampleRate == metadata.sampleRate) {
+            "Encoded recording $id changed sample rate from ${metadata.sampleRate} to ${decoded.sampleRate}"
+        }
+
+        val staging = Path(getRecordingsDataDirectory(), "$id$DURABLE_SUFFIX$STAGING_SUFFIX")
+        try {
+            SystemFileSystem.sink(staging).buffered().use { it.write(encoded) }
+            if (SystemFileSystem.exists(destination)) {
+                SystemFileSystem.delete(destination)
             }
-
-            val samples = readPcmFile(source)
-            uploadRecordingSamples(
-                id = idToMove,
-                sampleRate = cachedMetadata.sampleRate,
-                samples = samples,
-                encryptionKey = encryptionKey,
-            )
+            SystemFileSystem.atomicMove(staging, destination)
+            logger.i { "Committed recording $id to durable local storage" }
+            deleteWorkingFile("$id-original")
+        } finally {
+            if (SystemFileSystem.exists(staging)) SystemFileSystem.delete(staging)
         }
+    }
+
+    override suspend fun cleanupWorkingRecording(id: String) = withContext(Dispatchers.IO) {
+        deleteWorkingFile(id, keepMetadata = true)
+        deleteWorkingFile("$id-original")
+    }
+
+    private suspend fun deleteWorkingFile(id: String, keepMetadata: Boolean = false) {
+        val path = Path(getRecordingsCacheDirectory(), id)
+        if (SystemFileSystem.exists(path)) SystemFileSystem.delete(path)
+        if (!keepMetadata) cachedMetadataDao.delete(id)
     }
 
     override suspend fun uploadRecordingPcm(
@@ -320,6 +300,7 @@ class RealRecordingStorage(
         pcmBytes: ByteArray,
         encryptionKey: String?,
     ) = withContext(Dispatchers.IO) {
+        check(PrivacyPolicy.CLOUD_SERVICES_ENABLED) { "Cloud storage is disabled" }
         uploadRecordingSamples(
             id = id,
             sampleRate = sampleRate,
@@ -365,6 +346,7 @@ class RealRecordingStorage(
         samples: ShortArray,
         encryptionKey: String?,
     ) {
+        check(PrivacyPolicy.CLOUD_SERVICES_ENABLED) { "Cloud storage is disabled" }
         val destination = "recordings/${Firebase.auth.currentUser!!.uid}/$id"
         val m4aBytes = m4aEncoder.encode(samples, sampleRate)
         val uploadBytes = if (encryptionKey != null) {
@@ -401,9 +383,17 @@ class RealRecordingStorage(
         }
     }
 
-    override fun deleteRecording(id: String) {
-        val source = Path(getRecordingsDataDirectory(), id)
-        SystemFileSystem.delete(source)
+    override suspend fun deleteRecording(id: String) = withContext(Dispatchers.IO) {
+        listOf(
+            durablePath(id),
+            Path(getRecordingsDataDirectory(), "$id$DURABLE_SUFFIX$STAGING_SUFFIX"),
+            Path(getRecordingsCacheDirectory(), id),
+            Path(getRecordingsCacheDirectory(), "$id-original"),
+        ).forEach { path ->
+            if (SystemFileSystem.exists(path)) SystemFileSystem.delete(path)
+        }
+        cachedMetadataDao.delete(id)
+        cachedMetadataDao.delete("$id-original")
     }
 
     override fun deleteRecordingFromCache(id: String) {
@@ -412,8 +402,7 @@ class RealRecordingStorage(
     }
 
     override fun recordingExists(id: String): Boolean {
-        val source = Path(getRecordingsDataDirectory(), id)
-        return SystemFileSystem.exists(source)
+        return SystemFileSystem.exists(durablePath(id))
     }
 
     override suspend fun deleteAllCachedMetadata() {
@@ -436,7 +425,23 @@ class RealRecordingStorage(
         }
     }
 
+    override fun clearDataDirectory() {
+        val dataDir = getRecordingsDataDirectory()
+        try {
+            val entries = SystemFileSystem.list(dataDir)
+            for (entry in entries) {
+                try {
+                    SystemFileSystem.delete(entry, false)
+                } catch (_: Exception) { }
+            }
+            logger.i { "Cleared ${entries.size} durable recording files" }
+        } catch (e: Exception) {
+            logger.w { "Failed to clear durable recording directory: ${e.message}" }
+        }
+    }
+
     override suspend fun deleteFromFirebaseStorage(id: String) {
+        if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) return
         val path = "recordings/${Firebase.auth.currentUser!!.uid}/$id"
         try {
             Firebase.storage.reference(path).delete()

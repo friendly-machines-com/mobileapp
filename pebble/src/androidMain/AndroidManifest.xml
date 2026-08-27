@@ -15,11 +15,11 @@
         </receiver>
 
         <provider
-            android:authorities="coredevices.coreapp.pebblekit"
+            android:authorities="${applicationId}.pebblekit"
             android:name="io.rebble.libpebblecommon.pebblekit.two.PebbleKitProvider"
             android:exported="true" />
         <provider
-            android:authorities="com.getpebble.android.provider.basalt"
+            android:authorities="${applicationId}.basalt"
             android:name="io.rebble.libpebblecommon.pebblekit.classic.PebbleKitProvider"
             tools:ignore="ExportedContentProvider"
             android:exported="true" />

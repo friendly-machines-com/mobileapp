@@ -104,7 +104,7 @@ data class CoreConfig(
 
 @Serializable
 data class STTConfig(
-    val mode: CactusSTTMode = CactusSTTMode.RemoteOnly,
+    val mode: CactusSTTMode = CactusSTTMode.LocalOnly,
     val modelName: String? = null,
     /** ISO 639-1 language code. Null means auto-detect. */
     val spokenLanguage: String? = null,

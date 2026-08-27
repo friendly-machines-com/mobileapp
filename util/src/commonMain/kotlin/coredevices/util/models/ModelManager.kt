@@ -33,6 +33,15 @@ class ModelManager(
         return getDownloadedModelSlugs().filter { it != CommonBuildKonfig.CACTUS_LM_MODEL_NAME }
     }
 
+    /** Extracts the models shipped in the privacy APK into app-private storage. */
+    suspend fun prepareBundledLocalModels() {
+        val provider = requireNotNull(modelPathProvider) {
+            "Local model provider is unavailable"
+        }
+        provider.getSTTModelPath()
+        provider.getLMModelPath()
+    }
+
     fun deleteModel(modelName: String) {
         modelPathProvider?.deleteModel(modelName)
     }

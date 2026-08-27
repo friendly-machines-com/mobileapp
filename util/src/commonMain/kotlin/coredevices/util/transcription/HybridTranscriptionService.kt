@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import coredevices.analytics.CoreAnalytics
 import coredevices.util.AudioEncoding
 import coredevices.util.CoreConfigFlow
+import coredevices.util.PrivacyPolicy
 import coredevices.util.models.CactusSTTMode
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
@@ -105,6 +106,9 @@ class HybridTranscriptionService(
         willFallbackLocal: Boolean,
         initialTimeout: Duration = if (willFallbackLocal) 7.seconds else 10.seconds // We reduce the timeout if we have the potential to fall back locally since some consumers (e.g. pebble firmware) have hard timeouts.
     ): TranscriptionSessionStatus.Transcription {
+        if (!PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+            throw TranscriptionException.TranscriptionServiceUnavailable("cloud")
+        }
         suspend fun transcribeKirinki() = try {
             kirinki.transcribe(
                 audioStreamFrames = flowOf(audio),

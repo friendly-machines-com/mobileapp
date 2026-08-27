@@ -60,9 +60,11 @@ class RecordingPreprocessorTest {
 
             override suspend fun deleteFromFirebaseStorage(id: String) {}
 
-            override fun deleteRecording(id: String) {}
+            override suspend fun deleteRecording(id: String) {}
 
             override fun deleteRecordingFromCache(id: String) {}
+
+            override suspend fun cleanupWorkingRecording(id: String) {}
 
             override suspend fun exportRecording(id: String, useOriginalAudio: Boolean): Path {
                 TODO()
@@ -118,11 +120,13 @@ class RecordingPreprocessorTest {
                 )
             }
 
-            override suspend fun persistRecording(id: String) {}
+            override suspend fun commitLocalRecording(id: String) {}
 
             override fun recordingExists(id: String): Boolean {
                 TODO()
             }
+
+            override fun clearDataDirectory() {}
 
             override suspend fun uploadRecordingPcm(
                 id: String,

@@ -68,7 +68,6 @@ import coredevices.libindex.database.PrefsCollectionIndexStorage
 import coredevices.ring.agent.AgentNenya
 import coredevices.ring.api.NenyaModel
 import coredevices.ring.service.RecordingBackgroundScope
-import coredevices.ring.service.RingPairing
 import coredevices.ring.service.RingSync
 import coredevices.ring.service.recordings.RecordingPreprocessor
 import coredevices.ring.service.recordings.RecordingProcessingQueue
@@ -230,7 +229,6 @@ val experimentalModule = module {
     singleOf(::RecordingPreprocessor)
     singleOf(::RingSync)
     singleOf(::IndexNotificationManager)
-    singleOf(::RingPairing)
     singleOf(::IndexSettingsSummary)
     singleOf(::ExperimentalDevices)
     singleOf(::PrefsCollectionIndexStorage) bind CollectionIndexStorage::class

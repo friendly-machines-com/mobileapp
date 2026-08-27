@@ -14,7 +14,6 @@ import coredevices.ring.data.entity.room.TraceEventData
 import coredevices.ring.database.room.repository.McpSandboxRepository
 import coredevices.libindex.database.repository.RingTransferRepository
 import coredevices.ring.database.Preferences
-import coredevices.ring.service.RecordingBackgroundScope
 import coredevices.ring.service.recordings.RecordingProcessingQueue
 import coredevices.ring.service.recordings.RecordingProcessingStage
 import coredevices.ring.service.recordings.RecordingProcessor
@@ -28,7 +27,6 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -63,7 +61,6 @@ open class DefaultRecordingOperation(
     private val recordingEntryDao: RecordingEntryDao by inject()
     private val recordingProcessor: RecordingProcessor by inject()
     private val ringTransferRepository: RingTransferRepository by inject()
-    private val recordingBackgroundScope: RecordingBackgroundScope by inject()
     private val prefs: Preferences by inject()
     private var lastNotEnoughMemoryNotif: Instant? = null
 
@@ -123,33 +120,6 @@ open class DefaultRecordingOperation(
             )
         }
         val (source, meta) = recordingStorage.openRecordingSource(fileId)
-        // Fire-and-forget Firebase upload on the long-lived background scope. The local
-        // cache file is already fully written by the time we get here, so the rest of the
-        // operation (transcription / agent) doesn't depend on this completing, and a
-        // failure should not block — or be cancelled by — the processing queue slot.
-        recordingBackgroundScope.launch(Dispatchers.IO) {
-            try {
-                trace.markEvent("persist_recording_start", TraceEventData.PersistRecordingStart(
-                    recordingId = recordingId,
-                    transferId = transferId,
-                    fileId = fileId
-                ))
-                recordingStorage.persistRecording(fileId)
-                trace.markEvent("persist_recording_end", TraceEventData.PersistRecordingStart(
-                    recordingId = recordingId,
-                    transferId = transferId,
-                    fileId = fileId
-                ))
-            } catch (e: Exception) {
-                //TODO: Better sync handling, e.g. retry later
-                logger.e(e) { "Error persisting recording $fileId" }
-                trace.markEvent("persist_recording_fail", TraceEventData.PersistRecordingStart(
-                    recordingId = recordingId,
-                    transferId = transferId,
-                    fileId = fileId
-                ))
-            }
-        }
         coroutineScope {
             val mcpSession = mcpSessionFactory.createForSandboxGroup(
                 sandboxGroupId ?: mcpSandboxRepository.getDefaultGroupId(),

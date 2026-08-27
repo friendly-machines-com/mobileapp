@@ -37,6 +37,7 @@ import coredevices.ring.ui.screens.home.IndexFeedScreen
 import coredevices.ring.ui.theme.IndexThemeHost
 import coredevices.util.Permission
 import coredevices.util.PermissionRequester
+import coredevices.util.PrivacyPolicy
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import dev.gitlive.firebase.auth.FirebaseUser
@@ -95,17 +96,19 @@ class ExperimentalDevices(
         // Runs after each auth event because [DefaultListsBootstrap] reads
         // its own auth state internally; we kick once at app start and
         // again whenever auth changes via the snapshot listener flow.
-        scope.launch {
-            flow {
-                emit(Firebase.auth.currentUser)
-                Firebase.auth.authStateChanged.collect { emit(it) }
-            }.distinctUntilChanged { old: FirebaseUser?, new: FirebaseUser? ->
-                old?.uid == new?.uid
-            }.collect { user ->
-                if (user != null) {
-                    try { defaultListsBootstrap.ensure() } catch (e: Exception) {
-                        co.touchlab.kermit.Logger.withTag("ExperimentalDevices")
-                            .w(e) { "DefaultListsBootstrap.ensure() failed" }
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            scope.launch {
+                flow {
+                    emit(Firebase.auth.currentUser)
+                    Firebase.auth.authStateChanged.collect { emit(it) }
+                }.distinctUntilChanged { old: FirebaseUser?, new: FirebaseUser? ->
+                    old?.uid == new?.uid
+                }.collect { user ->
+                    if (user != null) {
+                        try { defaultListsBootstrap.ensure() } catch (e: Exception) {
+                            co.touchlab.kermit.Logger.withTag("ExperimentalDevices")
+                                .w(e) { "DefaultListsBootstrap.ensure() failed" }
+                        }
                     }
                 }
             }
@@ -255,24 +258,20 @@ class ExperimentalDevices(
             val messages = conversationMessageDao.getMessagesForRecording(recording.id).first()
 
             entries.mapNotNull { it.fileName }.distinct().forEach { fileName ->
-                // Export both the processed audio (what was transcribed) and the
-                // original raw capture, so bug reports carry both for comparison.
-                for (useOriginal in listOf(false, true)) {
-                    try {
-                        val path = recordingStorage.exportRecording(fileName, useOriginalAudio = useOriginal)
-                        val suffix = if (useOriginal) "-original" else ""
-                        attachments.add(
-                            DocumentAttachment(
-                                fileName = "recording-${recording.id}-$fileName$suffix.wav",
-                                mimeType = "audio/wav",
-                                source = SystemFileSystem.source(path).buffered(),
-                                size = path.size(),
-                            )
+                // Privacy build retains only the processed track; never attach
+                // the transient raw capture to a report.
+                try {
+                    val path = recordingStorage.exportRecording(fileName, useOriginalAudio = false)
+                    attachments.add(
+                        DocumentAttachment(
+                            fileName = "recording-${recording.id}-$fileName.wav",
+                            mimeType = "audio/wav",
+                            source = SystemFileSystem.source(path).buffered(),
+                            size = path.size(),
                         )
-                    } catch (e: Exception) {
-                        val variant = if (useOriginal) "original" else "processed"
-                        logger.w(e) { "Failed to export $variant audio for recording ${recording.id} ($fileName)" }
-                    }
+                    )
+                } catch (e: Exception) {
+                    logger.w(e) { "Failed to export processed audio for recording ${recording.id} ($fileName)" }
                 }
             }
 

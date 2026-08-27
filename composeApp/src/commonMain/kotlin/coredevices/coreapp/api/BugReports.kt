@@ -3,6 +3,7 @@ package coredevices.coreapp.api
 import PlatformContext
 import co.touchlab.kermit.Logger
 import coredevices.coreapp.push.AtlasPushMessage
+import coredevices.util.PrivacyPolicy
 import coredevices.util.emailOrNull
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
@@ -24,6 +25,7 @@ class BugReports(
     val ticketDetails: StateFlow<BugReportsListResponse?> = _ticketDetails.asStateFlow()
 
     fun init() {
+        if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) return
         GlobalScope.launch {
             Firebase.auth.idTokenChanged.collect {
                 refresh()

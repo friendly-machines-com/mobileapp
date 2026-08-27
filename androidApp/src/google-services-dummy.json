@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "replaceme",
         "android_client_info": {
-          "package_name": "coredevices.coreapp"
+          "package_name": "coredevices.coreapp.privacy"
         }
       },
       "oauth_client": [
@@ -17,7 +17,7 @@
           "client_id": "replaceme",
           "client_type": 1,
           "android_info": {
-            "package_name": "coredevices.coreapp",
+            "package_name": "coredevices.coreapp.privacy",
             "certificate_hash": "replaceme"
           }
         },
@@ -25,7 +25,7 @@
           "client_id": "replaceme",
           "client_type": 1,
           "android_info": {
-            "package_name": "coredevices.coreapp",
+            "package_name": "coredevices.coreapp.privacy",
             "certificate_hash": "replaceme"
           }
         },
@@ -33,7 +33,7 @@
           "client_id": "replaceme",
           "client_type": 1,
           "android_info": {
-            "package_name": "coredevices.coreapp",
+            "package_name": "coredevices.coreapp.privacy",
             "certificate_hash": "replaceme"
           }
         },
@@ -41,7 +41,7 @@
           "client_id": "replaceme",
           "client_type": 1,
           "android_info": {
-            "package_name": "coredevices.coreapp",
+            "package_name": "coredevices.coreapp.privacy",
             "certificate_hash": "replaceme"
           }
         },

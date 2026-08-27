@@ -5,6 +5,7 @@ import coredevices.analytics.CoreAnalytics
 import coredevices.haversine.KMPHaversineDebugDelegate
 import coredevices.haversine.KMPHaversineDebugInfo
 import coredevices.haversine.KMPHaversineSatellite
+import coredevices.util.PrivacyPolicy
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import dev.gitlive.firebase.firestore.Timestamp
@@ -55,6 +56,7 @@ class FirestoreRingDebugDelegate(
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun handleHaversineDebugInfo(info: KMPHaversineDebugInfo) {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return
         if (Firebase.auth.currentUser == null) {
             logger.w { "No authenticated user, adding to pending uploads." }
             pendingUploads.add(info)
@@ -77,6 +79,7 @@ class FirestoreRingDebugDelegate(
     }
 
     override fun shouldReadRxRSSI(satellite: KMPHaversineSatellite): Boolean {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return false
         val now = Clock.System.now()
         val elapsed = lastRxRssiReadTime?.let { now - it }
         if (elapsed == null || elapsed >= RX_RSSI_INTERVAL) {
@@ -88,6 +91,7 @@ class FirestoreRingDebugDelegate(
     }
 
     override fun handleRxRSSI(rssi: Float, satellite: KMPHaversineSatellite) {
+        if (!PrivacyPolicy.TELEMETRY_ENABLED) return
         val txRssi = satellite.lastAdvertisement?.rssi
         val diff = txRssi?.let { (it - rssi).absoluteValue }
         logger.i { "Received Rx RSSI: $rssi for satellite ${satellite.name} (${satellite.id}), tx = $txRssi, diff = $diff" }

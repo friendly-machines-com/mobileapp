@@ -74,6 +74,7 @@ import coredevices.ui.SignInDialog
 import coredevices.util.CoreConfigHolder
 import coredevices.util.Permission
 import coredevices.util.PermissionRequester
+import coredevices.util.PrivacyPolicy
 import coredevices.util.STTConfig
 import coredevices.util.emailOrNull
 import coredevices.util.integrations.Integration
@@ -92,6 +93,7 @@ import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,13 +127,42 @@ internal fun SetupStep(
     val coreConfigHolder: CoreConfigHolder = koinInject()
     val coreConfig by coreConfigHolder.config.collectAsState()
     val modelManager: ModelManager = koinInject()
-    val coreUser by Firebase.auth.authStateChanged
-        .map { it?.emailOrNull }
-        .distinctUntilChanged()
-        .collectAsState(Firebase.auth.currentUser?.emailOrNull)
-    val hasOfflineModels by produceState(false) {
-        withContext(Dispatchers.Default) {
-            value = modelManager.getDownloadedModelSlugs().any { it.startsWith("parakeet", false) }
+    val coreUserFlow = remember {
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            Firebase.auth.authStateChanged.map { it?.emailOrNull }.distinctUntilChanged()
+        } else {
+            flowOf(null)
+        }
+    }
+    val coreUser by coreUserFlow.collectAsState(
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) Firebase.auth.currentUser?.emailOrNull else null
+    )
+    val cactusSupported = remember { isCactusSupported() }
+    var modelPreparationAttempt by remember { mutableStateOf(0) }
+    var modelPreparationError by remember { mutableStateOf<String?>(null) }
+    var preparingModels by remember { mutableStateOf(isAndroid) }
+    var hasOfflineModels by remember {
+        mutableStateOf(modelManager.getDownloadedModelSlugs().any { it.startsWith("parakeet", false) })
+    }
+    LaunchedEffect(isAndroid, modelPreparationAttempt) {
+        if (!isAndroid || hasOfflineModels) {
+            preparingModels = false
+            return@LaunchedEffect
+        }
+        if (!cactusSupported) {
+            preparingModels = false
+            modelPreparationError = "This device does not support the included local speech engine."
+            return@LaunchedEffect
+        }
+        preparingModels = true
+        modelPreparationError = null
+        try {
+            modelManager.prepareBundledLocalModels()
+            hasOfflineModels = true
+        } catch (e: Exception) {
+            modelPreparationError = e.message ?: "Could not prepare the included speech model"
+        } finally {
+            preparingModels = false
         }
     }
     var pendingSTTModeDialog by remember { mutableStateOf<CactusSTTMode?>(null) }
@@ -179,7 +210,6 @@ internal fun SetupStep(
             )
         }
     }
-    val cactusSupported = remember { isCactusSupported() }
     val platformSpeechRecognizer: PlatformSpeechRecognizer = koinInject()
     val platformSttAvailable by produceState(false) {
         value = withContext(Dispatchers.Default) { platformSpeechRecognizer.isAvailable() }
@@ -292,6 +322,33 @@ internal fun SetupStep(
                     showPlatformOption = platformSttAvailable,
                     onPlatformInfo = { showPlatformInfoDialog = true },
                 )
+                if (isAndroid && preparingModels) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = palette.primary,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Preparing the included speech model…",
+                            fontSize = 12.sp,
+                            color = palette.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (isAndroid && modelPreparationError != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        modelPreparationError!!,
+                        fontSize = 12.sp,
+                        color = palette.error,
+                    )
+                    TextButton(onClick = { modelPreparationAttempt++ }) {
+                        Text("Retry")
+                    }
+                }
             }
         }
 
@@ -326,36 +383,41 @@ internal fun SetupStep(
                 PressTile(
                     label = "Disabled",
                     pattern = PressPattern.None,
-                    selected = gestureRoutes[RingGesture.ClickHold] == GestureDestination.IndexAgent,
+                    selected = gestureRoutes[RingGesture.ClickHold] == GestureDestination.Nothing,
                     onClick = {
-                        viewModel.setGestureRoute(RingGesture.ClickHold, GestureDestination.IndexAgent)
+                        viewModel.setGestureRoute(RingGesture.ClickHold, GestureDestination.Nothing)
                     },
                     modifier = Modifier.weight(1f),
                 )
-                PressTile(
-                    label = "Search",
-                    pattern = PressPattern.ShortHold,
-                    selected = gestureRoutes[RingGesture.ClickHold] == GestureDestination.WebSearch,
-                    onClick = {
-                        viewModel.setGestureRoute(RingGesture.ClickHold, GestureDestination.WebSearch)
-                    },
-                    modifier = Modifier.weight(1f),
-                )
+                if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+                    PressTile(
+                        label = "Search",
+                        pattern = PressPattern.ShortHold,
+                        selected = gestureRoutes[RingGesture.ClickHold] == GestureDestination.WebSearch,
+                        onClick = {
+                            viewModel.setGestureRoute(RingGesture.ClickHold, GestureDestination.WebSearch)
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 
-        // 5 — Backups
-        NumberedSection(
-            num = 5,
-            title = "Backups",
-            sub = "Your recordings sync to the cloud so you can restore them on a new phone. " +
-                    "Optionally encrypt them for extra privacy.",
-        ) {
-            BackupsContent(viewModel = viewModel)
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            NumberedSection(
+                num = 5,
+                title = "Backups",
+                sub = "Your recordings sync to the cloud so you can restore them on a new phone. " +
+                        "Optionally encrypt them for extra privacy.",
+            ) {
+                BackupsContent(viewModel = viewModel)
+            }
         }
 
-        // 6 — Try it out (live ring demo)
-        NumberedSection(num = 6, title = "Try it out") {
+        NumberedSection(
+            num = if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) 6 else 5,
+            title = "Try it out",
+        ) {
             RingDemo(nav = coreNav)
         }
 
@@ -364,7 +426,11 @@ internal fun SetupStep(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            PrimaryFilledButton(text = "Finish setup", onClick = onFinish)
+            PrimaryFilledButton(
+                text = if (preparingModels) "Preparing speech model…" else "Finish setup",
+                onClick = onFinish,
+                enabled = !isAndroid || hasOfflineModels,
+            )
             Text(
                 "You can change these later in settings",
                 fontSize = 13.sp,
@@ -588,14 +654,19 @@ internal fun SpeechModeChoice(
     showPlatformOption: Boolean = false,
     onPlatformInfo: (() -> Unit)? = null,
 ) {
-    val options = listOfNotNull(
-        Triple(CactusSTTMode.PlatformOnly, "On-device", "Recommended - private, stays on this iPhone")
-            .takeIf { showPlatformOption },
-        Triple(CactusSTTMode.RemoteOnly, "Cloud only", "Best performance, requires connection"),
-        Triple(CactusSTTMode.RemoteFirst, "Cloud, with local fallback", "Recommended, 400MB download")
-            .takeIf { !showPlatformOption },
-        Triple(CactusSTTMode.LocalOnly, "Local only", "Complete privacy, 400MB download"),
-    )
+    val options =
+        if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+            listOfNotNull(
+                Triple(CactusSTTMode.PlatformOnly, "On-device", "Recommended - private, stays on this iPhone")
+                    .takeIf { showPlatformOption },
+                Triple(CactusSTTMode.RemoteOnly, "Cloud only", "Best performance, requires connection"),
+                Triple(CactusSTTMode.RemoteFirst, "Cloud, with local fallback", "Recommended, 400MB download")
+                    .takeIf { !showPlatformOption },
+                Triple(CactusSTTMode.LocalOnly, "Local only", "Complete privacy, included with the app"),
+            )
+        } else {
+            listOf(Triple(CactusSTTMode.LocalOnly, "Local only", "Private, included with the app"))
+        }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { (m, title, sub) ->
             SpeechRadioCard(

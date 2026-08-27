@@ -3,8 +3,12 @@ package coredevices.analytics
 import PlatformContext
 import com.mixpanel.android.mpmetrics.MixpanelAPI
 import coredevices.util.CommonBuildKonfig
+import coredevices.util.PrivacyPolicy
 
 fun createAndroidAnalytics(platformContext: PlatformContext): AnalyticsBackend {
+    if (!PrivacyPolicy.TELEMETRY_ENABLED) {
+        return AndroidAnalyticsBackend(null)
+    }
     val token = CommonBuildKonfig.MIXPANEL_TOKEN
     if (token == null) {
         return AndroidAnalyticsBackend(null)

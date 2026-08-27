@@ -16,6 +16,7 @@ import coredevices.ring.encryption.DocumentEncryptor
 import coredevices.ring.encryption.EncryptionManager
 import coredevices.ring.encryption.KeyStorageStatus
 import coredevices.ring.service.RecordingBackgroundScope
+import coredevices.util.PrivacyPolicy
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.auth.auth
 import dev.gitlive.firebase.firestore.QuerySnapshot
@@ -101,8 +102,12 @@ class IndexFeedSyncService(
      *  eagerly constructed in [coredevices.ExperimentalDevices.appInit]
      *  so its observers are attached before login completes). */
     private val authState = flow {
-        emit(Firebase.auth.currentUser)
-        Firebase.auth.authStateChanged.collect { emit(it) }
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            emit(Firebase.auth.currentUser)
+            Firebase.auth.authStateChanged.collect { emit(it) }
+        } else {
+            emit(null)
+        }
     }
 
     init {
@@ -203,6 +208,7 @@ class IndexFeedSyncService(
      * time; this is a fresh-device or after-offline catch-up.
      */
     suspend fun syncNow() {
+        if (!PrivacyPolicy.CLOUD_SERVICES_ENABLED) return
         if (!preferences.backupEnabled.value) return
         if (Firebase.auth.currentUser == null) {
             log.w { "syncNow: skipped (not authenticated)" }

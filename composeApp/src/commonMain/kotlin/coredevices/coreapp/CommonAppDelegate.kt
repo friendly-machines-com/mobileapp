@@ -23,6 +23,7 @@ import coredevices.util.CommonBuildKonfig
 import coredevices.util.CoreConfig
 import coredevices.util.CoreConfigHolder
 import coredevices.util.DoneInitialOnboarding
+import coredevices.util.PrivacyPolicy
 import coredevices.util.emailOrNull
 import coredevices.util.models.CactusSTTMode
 import coredevices.util.transcription.CactusModelPathProvider
@@ -75,10 +76,12 @@ class CommonAppDelegate(
             logger.w(e) { "Cactus model provider not available" }
             return
         }
-        try {
-            modelProvider.initTelemetry()
-        } catch (e: Exception) {
-            logger.w(e) { "Cactus telemetry init skipped" }
+        if (PrivacyPolicy.TELEMETRY_ENABLED) {
+            try {
+                modelProvider.initTelemetry()
+            } catch (e: Exception) {
+                logger.w(e) { "Cactus telemetry init skipped" }
+            }
         }
         try {
             val incompatible = modelProvider.getIncompatibleModels()
@@ -91,8 +94,12 @@ class CommonAppDelegate(
                 coreConfigHolder.update(
                     coreConfigHolder.config.value.copy(
                         sttConfig = coreConfigHolder.config.value.sttConfig.copy(
-                            mode = coreConfigHolder.config.value.sttConfig.mode
-                                .takeUnless { it.usesLocalCactus() } ?: CactusSTTMode.RemoteOnly,
+                            mode = if (PrivacyPolicy.REMOTE_INDEX_PROCESSING_ENABLED) {
+                                coreConfigHolder.config.value.sttConfig.mode
+                                    .takeUnless { it.usesLocalCactus() } ?: CactusSTTMode.RemoteOnly
+                            } else {
+                                CactusSTTMode.LocalOnly
+                            },
                             modelName = null,
                         )
                     )
@@ -150,25 +157,29 @@ class CommonAppDelegate(
 
     fun init() {
         usersDao.init()
-        GlobalScope.launch(Dispatchers.Default) {
-            usersDao.initUserDevToken(pebbleAccountProvider.get().devToken.value)
-        }
-        GlobalScope.launch(Dispatchers.Default) {
-            Firebase.auth.currentUser?.emailOrNull?.let {
-                analyticsBackend.setUser(email = it)
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            GlobalScope.launch(Dispatchers.Default) {
+                usersDao.initUserDevToken(pebbleAccountProvider.get().devToken.value)
+            }
+            GlobalScope.launch(Dispatchers.Default) {
+                Firebase.auth.currentUser?.emailOrNull?.let {
+                    analyticsBackend.setUser(email = it)
+                }
             }
         }
         initCactus()
-        pushMessaging.init()
-        bugReports.init()
+        if (PrivacyPolicy.PUSH_MESSAGING_ENABLED) pushMessaging.init()
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) bugReports.init()
         GlobalScope.launch(Dispatchers.Default) {
             weatherFetcher.init()
             withContext(Dispatchers.Main) {
                 experimentalDevices.init()
             }
         }
-        firestoreLocker.init()
-        firestoreKnownWatchesSync.init()
+        if (PrivacyPolicy.CLOUD_SERVICES_ENABLED) {
+            firestoreLocker.init()
+            firestoreKnownWatchesSync.init()
+        }
         oneTimeSetLockerOrderMode()
         platformHealthSync.startAutoSync(GlobalScope)
         if (settings.getBoolean(SHOWN_ONBOARDING, false)) {
