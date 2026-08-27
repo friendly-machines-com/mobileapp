@@ -133,11 +133,11 @@ class GestureRoutingTest {
     }
 
     @Test
-    fun defaultsMatchLegacyDefaults() {
+    fun defaultsMatchPrivacyDefaults() {
         val routes = routing().routes.value
 
         assertEquals(
-            migratedRoutes(MusicControlMode.DoubleClick, SecondaryMode.Search, null),
+            migratedRoutes(MusicControlMode.DoubleClick, SecondaryMode.Disabled, null),
             routes
         )
     }
@@ -226,7 +226,7 @@ class GestureRoutingTest {
 
         assertEquals(GestureDestination.Nothing, routing.recordingDestinationFor(RingGesture.Hold))
         assertEquals(
-            GestureDestination.WebSearch,
+            GestureDestination.Nothing,
             routing.recordingDestinationFor(RingGesture.ClickHold)
         )
     }

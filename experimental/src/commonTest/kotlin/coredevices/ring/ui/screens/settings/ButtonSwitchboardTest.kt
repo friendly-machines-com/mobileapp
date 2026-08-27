@@ -34,20 +34,20 @@ class ButtonSwitchboardTest {
     }
 
     @Test
-    fun sandboxIsOnlyOfferedWhenAGroupExists() {
+    fun privacyBuildOnlyOffersTheLocalAgentOrNothing() {
         assertEquals(
             listOf(
                 GestureDestination.IndexAgent,
-                GestureDestination.WebSearch,
-                GestureDestination.WebhookOnly,
-                GestureDestination.McpSandbox(null),
                 GestureDestination.Nothing,
             ),
             destinationsFor(GestureKind.Recording, hasSandboxGroups = true),
         )
-        assertFalse(
-            destinationsFor(GestureKind.Recording, hasSandboxGroups = false)
-                .any { it is GestureDestination.McpSandbox }
+        assertEquals(
+            listOf(
+                GestureDestination.IndexAgent,
+                GestureDestination.Nothing,
+            ),
+            destinationsFor(GestureKind.Recording, hasSandboxGroups = false),
         )
     }
 
